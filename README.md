@@ -23,6 +23,7 @@ Este repositório contém scripts para migrar dados do sistema legado PetSys par
 
 - **Clientes**: PET_CLIENTE → PESSOA
 - **Pets**: PET_ANIMAL → PET
+- **Vacinas**: PET_VACINA → VACINA
 - **Atualização de Endereços**: Via API ViaCEP
 - **Tabela de Controle**: Rastreamento de mapeamentos origem→destino
 
@@ -56,6 +57,10 @@ petsys-migracao/
 │   │   └── pets/                    # Migração de pets
 │   │       ├── __init__.py
 │   │       └── migrate_pets.py      # PET_ANIMAL -> PET
+│   │
+│   │   └── vacinas/                 # Migração de vacinas
+│   │       ├── __init__.py
+│   │       └── migrate_vacinas.py   # PET_VACINA -> VACINA
 │   │
 │   ├── tests/                       # Testes e análises
 │   │   ├── __init__.py
@@ -156,7 +161,7 @@ Escolha a migração que deseja executar:
 
   1. Clientes (PET_CLIENTE -> PESSOA)
   2. Pets (PET_ANIMAL -> PET)
-  3. Vacinas [EM BREVE]
+  3. Vacinas (PET_VACINA -> VACINA)
   4. Atualizar Cidades via ViaCEP [EM BREVE]
 
   0. Sair
@@ -168,7 +173,8 @@ Opção: _
 
 1. **Clientes** primeiro (cria registros de PESSOA)
 2. **Pets** depois (requer proprietários migrados)
-3. **Vacinas** por último (requer pets migrados)
+3. **Vacinas** por último (cadastro de vacinas independente)
+4. **Atualizar Endereços** (opcional, via ViaCEP)
 
 ### Execução Direta (Scripts Individuais)
 
@@ -180,6 +186,10 @@ python src/migrations/clientes/migrate_clientes.py --batch-size 500
 # Migração de Pets
 python src/migrations/pets/migrate_pets.py --dry-run
 python src/migrations/pets/migrate_pets.py
+
+# Migração de Vacinas
+python src/migrations/vacinas/migrate_vacinas.py --dry-run
+python src/migrations/vacinas/migrate_vacinas.py
 
 # Atualização de Cidades/Endereços
 python src/update_cities.py --dry-run
@@ -268,7 +278,38 @@ Legado → Destino
 - Raça não encontrada → S.R.D. (código 7 para CANINA, 33 para FELINA)
 - Cor não encontrada → CARACTERISTICA (código 5)
 
-### 3. Atualização de Endereços (ViaCEP)
+### 3. Vacinas (PET_VACINA → VACINA)
+
+Migra o cadastro de vacinas do sistema legado para a tabela VACINA.
+
+**Características:**
+- Espécie padrão: CANINA (código 1)
+- Validação por nome da vacina (evita duplicatas)
+- Valores padrão para desconto (0) e inclusão em plano (False)
+- Atualiza registros existentes se já cadastrados
+
+**Campos migrados:**
+
+| Origem (PET_VACINA) | Destino (VACINA) | Transformação |
+|---------------------|------------------|---------------|
+| Codigo | - | Salvo em CONTROLE_MIGRACAO_LEGADO |
+| Descricao | sNmVacina | Direto (trim) |
+| Frequencia | nNrFrequencia | Conversão para inteiro |
+| Periodo | nCdPeriodicidade | Conversão para inteiro |
+| PrecoCompra | nVlPrecoCompra | Conversão para decimal |
+| PrecoVenda | nVlPrecoVenda | Conversão para decimal |
+| - | nCdEspecie | **Fixo: 1 (CANINA)** |
+| - | nPcDescontoMensalista | **Fixo: 0.0** |
+| - | bFlInclusoPlanoMensalista | **Fixo: False** |
+| - | bFlAtivo | **Fixo: True** |
+| - | sCdTenant | DEFAULT_TENANT |
+
+**Validação:**
+- Chave única: Nome da vacina + Tenant (case-insensitive)
+- Se vacina existir: atualiza dados
+- Se não existir: insere nova
+
+### 4. Atualização de Endereços (ViaCEP)
 
 Atualiza endereços consultando a API ViaCEP.
 
@@ -441,7 +482,47 @@ Pulados (sem proprietário): 131
 ============================================================
 ```
 
-### Exemplo 3: Atualização de Cidades
+### Exemplo 3: Migração de Vacinas
+
+```bash
+$ pipenv run python src/main.py
+
+Opção: 3
+
+--------------------------------------------------------------
+MIGRAÇÃO DE VACINAS
+--------------------------------------------------------------
+
+Esta migração irá:
+  • Ler registros de PET_VACINA (banco legado)
+  • Mapear para tabela VACINA (banco destino)
+  • Definir espécie padrão como CANINA (1)
+  • Configurar valores padrão para desconto e plano
+
+Executar em modo DRY-RUN primeiro? (s/n): n
+Tamanho do batch (padrão 500): 500
+
+→ Executando migração real...
+
+[1] Processando: V10 ADULTO (Código: 1)
+  ✓ Atualizado: V10 ADULTO
+[2] Processando: V10 FILHOTE (Código: 2)
+  ✓ Inserido: V10 FILHOTE
+[3] Processando: V8 ADULTO (Código: 3)
+  ✓ Inserido: V8 ADULTO
+...
+[19] Processando: CYTOPOINT (Código: 19)
+  ✓ Inserido: CYTOPOINT
+
+============================================================
+✓ Migração finalizada!
+  Total processado: 19
+  Inseridos: 17
+  Atualizados: 2
+============================================================
+```
+
+### Exemplo 4: Atualização de Cidades
 
 ```bash
 $ pipenv run python src/update_cities.py
@@ -502,6 +583,22 @@ pipenv run python src/tests/analyze_dest_pet.py
 ```
 
 Analisa estrutura e dados da tabela `PET` no banco destino.
+
+### Analisar Vacinas Legacy
+
+```bash
+pipenv run python src/tests/analyze_legacy_vacinas.py
+```
+
+Analisa estrutura e dados da tabela `PET_VACINA` no banco legado, mostrando estatísticas de frequências, períodos e preços.
+
+### Verificar Vacinas Migradas
+
+```bash
+pipenv run python src/tests/verify_vacinas.py
+```
+
+Verifica vacinas migradas no banco destino com distribuição por espécie.
 
 ### Testar Fuzzy Matching
 
@@ -611,6 +708,23 @@ HTTP 429 Too Many Requests
 - Menu interativo
 - Estrutura modular organizada
 - Template para novas migrações
+
+### [08/11/2025] - Migração de Vacinas Implementada
+
+**✅ Adicionado:**
+- Migração completa de PET_VACINA → VACINA
+- Validação por nome de vacina (evita duplicatas)
+- Espécie padrão CANINA (código 1)
+- Valores padrão para desconto e plano
+- Scripts de teste e análise
+- Documentação completa
+
+**📊 Status:**
+- [x] Migração de Clientes
+- [x] Migração de Pets
+- [x] Migração de Vacinas
+- [ ] Integração ViaCEP no menu
+- [ ] Migração de aplicações de vacinas
 
 ## 💡 Dicas e Boas Práticas
 

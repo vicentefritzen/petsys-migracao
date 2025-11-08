@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from migrations.clientes.migrate_clientes import migrate_clientes
 from migrations.pets.migrate_pets import migrate_pets
+from migrations.vacinas.migrate_vacinas import migrate_vacinas
 
 
 def print_header():
@@ -28,7 +29,7 @@ def print_menu():
     print()
     print("  1. Clientes (PET_CLIENTE -> PESSOA)")
     print("  2. Pets (PET_ANIMAL -> PET)")
-    print("  3. Vacinas (PET_VACINA -> VACINA) [EM BREVE]")
+    print("  3. Vacinas (PET_VACINA -> VACINA)")
     print("  4. Atualizar Cidades via ViaCEP [EM BREVE]")
     print()
     print("  0. Sair")
@@ -96,6 +97,40 @@ def run_migration_pets():
     print(f"\n✓ Migração concluída! {total} registros processados.\n")
 
 
+def run_migration_vacinas():
+    """Executa a migração de vacinas."""
+    print("\n" + "-"*60)
+    print("MIGRAÇÃO DE VACINAS")
+    print("-"*60 + "\n")
+    
+    print("Esta migração irá:")
+    print("  • Ler registros de PET_VACINA (banco legado)")
+    print("  • Mapear para tabela VACINA (banco destino)")
+    print("  • Definir espécie padrão como CANINA (1)")
+    print("  • Configurar valores padrão para desconto e plano\n")
+    
+    # Perguntar sobre dry-run
+    if confirm_action("Executar em modo DRY-RUN primeiro?"):
+        print("\n→ Executando DRY-RUN...\n")
+        migrate_vacinas(batch_size=500, dry_run=True)
+        
+        if not confirm_action("\nDeseja executar a migração real agora?"):
+            print("\nMigração cancelada.\n")
+            return
+    
+    # Solicitar batch size
+    batch_size = get_batch_size()
+    
+    # Executar migração real
+    print("\n→ Executando migração real...\n")
+    stats = migrate_vacinas(batch_size=batch_size, dry_run=False)
+    
+    print(f"\n✓ Migração concluída!")
+    print(f"  Total: {stats['total']}")
+    print(f"  Inseridos: {stats['inseridos']}")
+    print(f"  Atualizados: {stats['atualizados']}\n")
+
+
 def run_update_cities():
     """Executa atualização de cidades via ViaCEP."""
     print("\n" + "-"*60)
@@ -127,7 +162,7 @@ def main():
                 run_migration_pets()
             
             elif choice == "3":
-                print("\n⚠ Migração de Vacinas ainda não implementada.\n")
+                run_migration_vacinas()
             
             elif choice == "4":
                 run_update_cities()

@@ -6,10 +6,10 @@ name = "pypi"
 [packages]
 sqlalchemy = "*"
 python-dotenv = "*"
-requests = "*"
-rapidfuzz = "*"
 pymssql = "*"
 pyodbc = "*"
+requests = "*"
+rapidfuzz = "*"
 
 [dev-packages]
 
