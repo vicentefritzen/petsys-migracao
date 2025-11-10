@@ -24,8 +24,8 @@ env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 DEFAULT_TENANT = os.getenv("DEFAULT_TENANT", "dfedd5f4-f30c-45ea-bc1e-695081d8415c")
-VIACEP_DELAY_SECONDS = int(os.getenv("VIACEP_DELAY_SECONDS", "10"))
-VIACEP_BATCH_SIZE = int(os.getenv("VIACEP_BATCH_SIZE", "10"))
+VIACEP_DELAY_SECONDS = int(os.getenv("VIACEP_DELAY_SECONDS", "5"))
+VIACEP_BATCH_SIZE = int(os.getenv("VIACEP_BATCH_SIZE", "100"))
 FUZZY_MIN_SCORE = int(os.getenv("FUZZY_MIN_SCORE", "85"))
 
 
@@ -170,7 +170,7 @@ def atualizar_endereco_pessoa(dest_engine, scd_pessoa: str, dados_endereco: dict
         params["logradouro"] = dados_endereco["logradouro"]
     
     if dados_endereco.get("bairro"):
-        campos_update.append("sDsBairro = :bairro")
+        campos_update.append("sNmBairro = :bairro")
         params["bairro"] = dados_endereco["bairro"]
     
     if dados_endereco.get("complemento"):
@@ -196,6 +196,14 @@ def update_cities(args):
     """Atualiza as cidades das pessoas consultando a API ViaCEP."""
     dest_engine = get_engine_from_env("DEST_DB_URL")
     tenant_id = args.tenant or DEFAULT_TENANT
+    
+    print(f"\n{'='*60}")
+    print(f"CONFIGURAÇÃO:")
+    print(f"  • Batch size: {VIACEP_BATCH_SIZE} requisições")
+    print(f"  • Delay entre lotes: {VIACEP_DELAY_SECONDS} segundos")
+    print(f"  • Score mínimo fuzzy: {FUZZY_MIN_SCORE}%")
+    print(f"  • Dry-run: {'SIM' if args.dry_run else 'NÃO'}")
+    print(f"{'='*60}\n")
     
     # Buscar todas as pessoas com CEP válido
     select_sql = text("""
@@ -266,9 +274,9 @@ ORDER BY tDtCadastro
         
         processados += 1
         
-        # Delay a cada VIACEP_BATCH_SIZE registros
-        if processados % VIACEP_BATCH_SIZE == 0 and processados < total:
-            print(f"  💤 Aguardando {VIACEP_DELAY_SECONDS} segundos...")
+        # Delay a cada VIACEP_BATCH_SIZE registros para respeitar rate limit da API
+        if idx % VIACEP_BATCH_SIZE == 0 and idx < total:
+            print(f"\n💤 Processados {idx}/{total} - Aguardando {VIACEP_DELAY_SECONDS} segundos (rate limit ViaCEP)...\n")
             time.sleep(VIACEP_DELAY_SECONDS)
     
     print("\n" + "="*60)
