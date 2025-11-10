@@ -15,6 +15,7 @@ from migrations.pets.migrate_pets import migrate_pets
 from migrations.vacinas.migrate_vacinas import migrate_vacinas
 from migrations.aplicacoes_vacinas.migrate_aplicacoes_vacinas_bulk import migrate_aplicacoes_vacinas_bulk
 from migrations.pesos.migrate_pesos_bulk import migrate_pesos_bulk
+from migrations.prontuarios.migrate_prontuarios import migrate_prontuarios_bulk
 from clear_migrated_data import clear_all_data
 
 # Importar função de atualização de cidades
@@ -42,6 +43,7 @@ def print_menu():
     print("  4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)")
     print("  5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)")
     print("  6. Atualizar Cidades via ViaCEP")
+    print("  7. Prontuários (PET_ANIMAL_PRONTUARIO -> PRONTUARIO + RECEITA_MEDICA)")
     print()
     print("  9. ⚠️  EXCLUIR TODOS os dados migrados")
     print()
@@ -265,6 +267,48 @@ def run_migration_pesos():
     print(f"\n✓ Migração concluída! {total} registros processados.\n")
 
 
+def run_migration_prontuarios():
+    """Executa a migração de prontuários com parsing de texto."""
+    print("\n" + "-"*60)
+    print("MIGRAÇÃO DE PRONTUÁRIOS (PARSING DE TEXTO)")
+    print("-"*60 + "\n")
+    
+    print("Esta migração irá:")
+    print("  • Ler registros de PET_ANIMAL_PRONTUARIO (banco legado)")
+    print("  • Parsear o campo 'Tag' com regex para extrair entries individuais")
+    print("  • Identificar veterinário responsável via fuzzy matching")
+    print("  • Separar RECEITA MÉDICA para tabela específica")
+    print("  • Associar receitas ao veterinário do entry imediatamente anterior")
+    print("  • Usar veterinário fallback quando não identificar\n")
+    
+    print("⚠ IMPORTANTE: Execute as migrações de PETS e USUÁRIOS antes!")
+    print("  Prontuários sem pet migrado serão pulados.\n")
+    
+    # Perguntar sobre dry-run
+    if confirm_action("Executar em modo DRY-RUN primeiro (amostra 5 registros)?"):
+        print("\n→ Executando DRY-RUN...\n")
+        migrate_prontuarios_bulk(batch_size=500, dry_run=True)
+        
+        if not confirm_action("\nDeseja executar a migração real agora?"):
+            print("\nMigração cancelada.\n")
+            return
+    elif not confirm_action("\nDeseja executar a migração real SEM simular?"):
+        print("\nMigração cancelada.\n")
+        return
+    
+    # Executar migração real
+    print("\n→ Executando migração BULK com parsing...\n")
+    stats = migrate_prontuarios_bulk(batch_size=500, dry_run=False)
+    
+    if stats:
+        print(f"\n✓ Migração concluída!")
+        print(f"  Registros processados: {stats['total_registros']}")
+        print(f"  Entries parseados: {stats['total_entries']}")
+        print(f"  Prontuários: {stats['prontuarios']}")
+        print(f"  Receitas médicas: {stats['receitas']}")
+        print(f"  Laboratórios: {stats['laboratorios']}\n")
+
+
 def run_clear_all_data():
     """Executa exclusão de todos os dados migrados."""
     print("\n" + "-"*60)
@@ -275,10 +319,12 @@ def run_clear_all_data():
     print("\nSerão excluídos (nesta ordem):")
     print("  1. Aplicações de Vacinas")
     print("  2. Pesos")
-    print("  3. Vacinas")
-    print("  4. Pets")
-    print("  5. Clientes")
-    print("  6. Registros de Controle\n")
+    print("  3. Receitas Médicas")
+    print("  4. Prontuários")
+    print("  5. Vacinas")
+    print("  6. Pets")
+    print("  7. Clientes")
+    print("  8. Registros de Controle\n")
     
     # Perguntar sobre dry-run
     if confirm_action("Executar em modo DRY-RUN primeiro (simulação)?"):
@@ -335,6 +381,9 @@ def main():
             
             elif choice == "6":
                 run_update_cities()
+            
+            elif choice == "7":
+                run_migration_prontuarios()
             
             elif choice == "9":
                 run_clear_all_data()

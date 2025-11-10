@@ -165,6 +165,7 @@ Escolha a migração que deseja executar:
   4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)
   5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)
   6. Atualizar Cidades via ViaCEP
+  7. Prontuários (PET_ANIMAL_PRONTUARIO -> PRONTUARIO)
 
   9. ⚠️  EXCLUIR TODOS os dados migrados
 
@@ -181,6 +182,7 @@ Opção: _
 4. **Aplicações de Vacinas** (requer pets e vacinas migrados)
 5. **Pesos dos Pets** (requer pets migrados)
 6. **Atualizar Cidades** (opcional, atualiza cidades baseado em CEP)
+7. **Prontuários** (requer pets e usuários veterinários migrados)
 
 ### 🗑️ Exclusão de Dados Migrados
 
@@ -226,6 +228,10 @@ python src/migrations/aplicacoes_vacinas/migrate_aplicacoes_vacinas_bulk.py --ba
 # Migração de Pesos dos Pets (bulk insert otimizado)
 python src/migrations/pesos/migrate_pesos_bulk.py --dry-run
 python src/migrations/pesos/migrate_pesos_bulk.py --batch-size 1000
+
+# Migração de Prontuários (parsing de texto complexo)
+python src/migrations/prontuarios/migrate_prontuarios.py --dry-run
+python src/migrations/prontuarios/migrate_prontuarios.py
 
 # Atualização de Cidades/Endereços
 python src/update_cities.py --dry-run
@@ -375,6 +381,83 @@ Atualiza endereços consultando a API ViaCEP.
 - Busca primeiro na UF retornada pelo ViaCEP
 - Se não encontrar, busca em todo o Brasil
 - **Preferência SC**: Em scores próximos, escolhe cidade de SC
+
+### 5. Prontuários (PET_ANIMAL_PRONTUARIO → PRONTUARIO + RECEITA_MEDICA)
+
+Migração complexa com **parsing de texto** do campo Tag.
+
+**Características:**
+- **Regex parsing**: Extrai entries individuais de campo texto concatenado
+- **Fuzzy matching**: Identifica veterinário responsável por nome
+- **Separação automática**: RECEITA MÉDICA vai para tabela específica
+- **Herança de veterinário**: Receitas herdam veterinário do entry imediatamente anterior
+- **Fallback**: Usa veterinário padrão quando não identificar (DRA. JULIANA FARBER METZLER)
+- **Observação inteligente**: Só preenche sDsObservacao para laboratórios (CITOVET, etc)
+- **Logging**: Registra exceções quando usa fallback
+
+**Formato do campo Tag (origem):**
+```
+[03/02/2025 13:15:37 - DRA MIRELLA]:
+tutora refere que ontem a noite estava normal...
+(prontuário normal)
+
+[03/02/2025 13:06:27 - RECEITA MÉDICA]:
+USO ORAL
+1. Prediderm 20mg...
+(associado à DRA MIRELLA do entry anterior)
+
+[03/02/2025 10:45:00 - CITOVET LABORATORIO]:
+Resultado de hemograma completo disponível.
+(laboratório - sDsObservacao preenchida)
+```
+
+**Padrão de parsing:**
+- Regex: `\[DD/MM/YYYY HH:MM:SS - RESPONSÁVEL\]:conteúdo`
+- Entries ordenados por data
+- Tipos detectados: 
+  - **PRONTUARIO**: Migrado com fuzzy matching de veterinário
+  - **RECEITA_MEDICA**: Migrado para RECEITA_MEDICA (herda vet do anterior)
+  - **LABORATORIO**: Migrado como prontuário com sDsObservacao = nome do lab
+
+**Mapeamento de dados:**
+
+| Origem | Destino (PRONTUARIO) | Lógica |
+|--------|---------------------|--------|
+| Tag entry → data | tDtRegistro | Parse datetime DD/MM/YYYY HH:MM:SS |
+| Tag entry → responsável | sCdUsuarioRegistro | Fuzzy match com tabela USUARIO |
+| Tag entry → conteúdo | sDsProntuario | Texto completo do entry |
+| Tag entry → responsável | sDsObservacao | **NULL** (vazio para prontuários normais) |
+| Tag entry → laboratório | sDsObservacao | Nome do laboratório (só para CITOVET, etc) |
+
+| Origem | Destino (RECEITA_MEDICA) | Lógica |
+|--------|-------------------------|--------|
+| Tag entry → data | tDtRegistro | Parse datetime DD/MM/YYYY HH:MM:SS |
+| Entry anterior → sCdUsuario | sCdUsuarioRegistro | Herda do entry imediatamente anterior |
+| Tag entry → conteúdo | sDsReceitaMedica | Texto completo da receita |
+
+**Lógica de associação de veterinário:**
+
+1. **Prontuário normal**: Fuzzy matching do nome extraído → Tabela USUARIO
+   - sDsObservacao = **NULL** (vazio)
+   
+2. **Laboratório** (CITOVET, LABVET, etc): Usa veterinário fallback
+   - sDsObservacao = Nome do laboratório (ex: "CITOVET LABORATORIO")
+   
+3. **Receita Médica**:
+   - Busca o último entry anterior que **não seja** RECEITA_MEDICA
+   - Herda o sCdUsuarioRegistro desse entry
+   - Se não encontrar: usa veterinário fallback
+   - Exemplo: `[DRA MIRELLA]` seguido de `[RECEITA MÉDICA]` → Receita fica com DRA MIRELLA
+
+**Configuração necessária (.env):**
+```bash
+DEFAULT_VET_FALLBACK_NAME=DRA. JULIANA FARBER METZLER
+```
+
+**Pré-requisitos:**
+- ✅ Pets migrados (PET_ANIMAL → PET)
+- ✅ Usuários veterinários cadastrados no destino
+- ✅ Veterinário fallback existir na tabela USUARIO
 
 ## 🎯 Funcionalidades Principais
 

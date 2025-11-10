@@ -4,10 +4,12 @@ Script para exclusão de dados migrados
 Exclui dados migrados na ordem correta para evitar problemas de foreign key:
 1. Aplicações de Vacinas (PET_VACINA)
 2. Pesos (PET_PESO)
-3. Vacinas (VACINA)
-4. Pets (PET)
-5. Clientes (PESSOA)
-6. Registros de controle (CONTROLE_MIGRACAO_LEGADO)
+3. Receitas Médicas (RECEITA_MEDICA)
+4. Prontuários (PRONTUARIO)
+5. Vacinas (VACINA)
+6. Pets (PET)
+7. Clientes (PESSOA)
+8. Registros de controle (CONTROLE_MIGRACAO_LEGADO)
 """
 import sys
 from pathlib import Path
@@ -42,6 +44,20 @@ def get_counts(dest_engine, tenant_id: str):
             WHERE sCdTenant = '{tenant_id}'
         """))
         counts['pesos'] = result.fetchone()[0]
+        
+        # Receitas Médicas
+        result = conn.execute(text(f"""
+            SELECT COUNT(*) FROM RECEITA_MEDICA 
+            WHERE sCdTenant = '{tenant_id}'
+        """))
+        counts['receitas'] = result.fetchone()[0]
+        
+        # Prontuários
+        result = conn.execute(text(f"""
+            SELECT COUNT(*) FROM PRONTUARIO 
+            WHERE sCdTenant = '{tenant_id}'
+        """))
+        counts['prontuarios'] = result.fetchone()[0]
         
         # Vacinas
         result = conn.execute(text(f"""
@@ -116,9 +132,51 @@ def clear_pesos(dest_engine, tenant_id: str, dry_run: bool = False):
     return count
 
 
+def clear_receitas(dest_engine, tenant_id: str, dry_run: bool = False):
+    """Exclui receitas médicas."""
+    print("3️⃣  Excluindo RECEITAS MÉDICAS (RECEITA_MEDICA)...", end=" ", flush=True)
+    
+    if dry_run:
+        print("[DRY-RUN]")
+        return 0
+    
+    delete_sql = text(f"""
+        DELETE FROM RECEITA_MEDICA 
+        WHERE sCdTenant = '{tenant_id}'
+    """)
+    
+    with dest_engine.begin() as conn:
+        result = conn.execute(delete_sql)
+        count = result.rowcount
+    
+    print(f"✓ {count} registros excluídos")
+    return count
+
+
+def clear_prontuarios(dest_engine, tenant_id: str, dry_run: bool = False):
+    """Exclui prontuários."""
+    print("4️⃣  Excluindo PRONTUÁRIOS (PRONTUARIO)...", end=" ", flush=True)
+    
+    if dry_run:
+        print("[DRY-RUN]")
+        return 0
+    
+    delete_sql = text(f"""
+        DELETE FROM PRONTUARIO 
+        WHERE sCdTenant = '{tenant_id}'
+    """)
+    
+    with dest_engine.begin() as conn:
+        result = conn.execute(delete_sql)
+        count = result.rowcount
+    
+    print(f"✓ {count} registros excluídos")
+    return count
+
+
 def clear_vacinas(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui vacinas."""
-    print("3️⃣  Excluindo VACINAS (VACINA)...", end=" ", flush=True)
+    print("5️⃣  Excluindo VACINAS (VACINA)...", end=" ", flush=True)
     
     if dry_run:
         print("[DRY-RUN]")
@@ -139,7 +197,7 @@ def clear_vacinas(dest_engine, tenant_id: str, dry_run: bool = False):
 
 def clear_pets(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui pets."""
-    print("4️⃣  Excluindo PETS (PET)...", end=" ", flush=True)
+    print("6️⃣  Excluindo PETS (PET)...", end=" ", flush=True)
     
     if dry_run:
         print("[DRY-RUN]")
@@ -160,7 +218,7 @@ def clear_pets(dest_engine, tenant_id: str, dry_run: bool = False):
 
 def clear_clientes(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui clientes."""
-    print("5️⃣  Excluindo CLIENTES (PESSOA)...", end=" ", flush=True)
+    print("7️⃣  Excluindo CLIENTES (PESSOA)...", end=" ", flush=True)
     
     if dry_run:
         print("[DRY-RUN]")
@@ -181,7 +239,7 @@ def clear_clientes(dest_engine, tenant_id: str, dry_run: bool = False):
 
 def clear_controle(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui registros de controle de migração."""
-    print("6️⃣  Excluindo CONTROLE DE MIGRAÇÃO (CONTROLE_MIGRACAO_LEGADO)...", end=" ", flush=True)
+    print("8️⃣  Excluindo CONTROLE DE MIGRAÇÃO (CONTROLE_MIGRACAO_LEGADO)...", end=" ", flush=True)
     
     if dry_run:
         print("[DRY-RUN]")
@@ -224,6 +282,8 @@ def clear_all_data(dry_run: bool = False):
     counts_before = get_counts(dest_engine, tenant_id)
     print(f"  • Aplicações de Vacinas: {counts_before['aplicacoes_vacinas']:,}")
     print(f"  • Pesos: {counts_before['pesos']:,}")
+    print(f"  • Receitas Médicas: {counts_before['receitas']:,}")
+    print(f"  • Prontuários: {counts_before['prontuarios']:,}")
     print(f"  • Vacinas: {counts_before['vacinas']:,}")
     print(f"  • Pets: {counts_before['pets']:,}")
     print(f"  • Clientes: {counts_before['clientes']:,}")
@@ -241,6 +301,8 @@ def clear_all_data(dry_run: bool = False):
     try:
         stats['aplicacoes_vacinas'] = clear_aplicacoes_vacinas(dest_engine, tenant_id, dry_run)
         stats['pesos'] = clear_pesos(dest_engine, tenant_id, dry_run)
+        stats['receitas'] = clear_receitas(dest_engine, tenant_id, dry_run)
+        stats['prontuarios'] = clear_prontuarios(dest_engine, tenant_id, dry_run)
         stats['vacinas'] = clear_vacinas(dest_engine, tenant_id, dry_run)
         stats['pets'] = clear_pets(dest_engine, tenant_id, dry_run)
         stats['clientes'] = clear_clientes(dest_engine, tenant_id, dry_run)
@@ -256,6 +318,8 @@ def clear_all_data(dry_run: bool = False):
         counts_after = get_counts(dest_engine, tenant_id)
         print(f"  • Aplicações de Vacinas: {counts_after['aplicacoes_vacinas']:,}")
         print(f"  • Pesos: {counts_after['pesos']:,}")
+        print(f"  • Receitas Médicas: {counts_after['receitas']:,}")
+        print(f"  • Prontuários: {counts_after['prontuarios']:,}")
         print(f"  • Vacinas: {counts_after['vacinas']:,}")
         print(f"  • Pets: {counts_after['pets']:,}")
         print(f"  • Clientes: {counts_after['clientes']:,}")
