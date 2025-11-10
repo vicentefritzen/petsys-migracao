@@ -162,7 +162,11 @@ Escolha a migração que deseja executar:
   1. Clientes (PET_CLIENTE -> PESSOA)
   2. Pets (PET_ANIMAL -> PET)
   3. Vacinas (PET_VACINA -> VACINA)
-  4. Atualizar Cidades via ViaCEP [EM BREVE]
+  4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)
+  5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)
+  6. Atualizar Cidades via ViaCEP [EM BREVE]
+
+  9. ⚠️  EXCLUIR TODOS os dados migrados
 
   0. Sair
 
@@ -173,8 +177,32 @@ Opção: _
 
 1. **Clientes** primeiro (cria registros de PESSOA)
 2. **Pets** depois (requer proprietários migrados)
-3. **Vacinas** por último (cadastro de vacinas independente)
-4. **Atualizar Endereços** (opcional, via ViaCEP)
+3. **Vacinas** (cadastro de vacinas independente)
+4. **Aplicações de Vacinas** (requer pets e vacinas migrados)
+5. **Pesos dos Pets** (requer pets migrados)
+6. **Atualizar Endereços** (opcional, via ViaCEP)
+
+### 🗑️ Exclusão de Dados Migrados
+
+**ATENÇÃO: Operação irreversível!** Use a opção 9 do menu ou execute:
+
+```bash
+# Simulação (não deleta nada)
+python src/clear_migrated_data.py --dry-run
+
+# Exclusão REAL (requer confirmação)
+python src/clear_migrated_data.py --confirm
+```
+
+A exclusão é feita na ordem correta para respeitar foreign keys:
+1. Aplicações de Vacinas
+2. Pesos
+3. Vacinas
+4. Pets
+5. Clientes
+6. Registros de Controle
+
+Apenas dados da tenant parametrizada serão excluídos.
 
 ### Execução Direta (Scripts Individuais)
 
@@ -191,9 +219,21 @@ python src/migrations/pets/migrate_pets.py
 python src/migrations/vacinas/migrate_vacinas.py --dry-run
 python src/migrations/vacinas/migrate_vacinas.py
 
+# Migração de Aplicações de Vacinas (bulk insert otimizado)
+python src/migrations/aplicacoes_vacinas/migrate_aplicacoes_vacinas_bulk.py --dry-run
+python src/migrations/aplicacoes_vacinas/migrate_aplicacoes_vacinas_bulk.py --batch-size 1000
+
+# Migração de Pesos dos Pets (bulk insert otimizado)
+python src/migrations/pesos/migrate_pesos_bulk.py --dry-run
+python src/migrations/pesos/migrate_pesos_bulk.py --batch-size 1000
+
 # Atualização de Cidades/Endereços
 python src/update_cities.py --dry-run
 python src/update_cities.py
+
+# Exclusão de TODOS os dados migrados
+python src/clear_migrated_data.py --dry-run  # Simulação
+python src/clear_migrated_data.py --confirm  # REAL (irreversível!)
 ```
 
 ### Parâmetros Disponíveis

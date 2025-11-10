@@ -14,6 +14,8 @@ from migrations.clientes.migrate_clientes import migrate_clientes
 from migrations.pets.migrate_pets import migrate_pets
 from migrations.vacinas.migrate_vacinas import migrate_vacinas
 from migrations.aplicacoes_vacinas.migrate_aplicacoes_vacinas_bulk import migrate_aplicacoes_vacinas_bulk
+from migrations.pesos.migrate_pesos_bulk import migrate_pesos_bulk
+from clear_migrated_data import clear_all_data
 
 
 def print_header():
@@ -32,7 +34,10 @@ def print_menu():
     print("  2. Pets (PET_ANIMAL -> PET)")
     print("  3. Vacinas (PET_VACINA -> VACINA)")
     print("  4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)")
-    print("  5. Atualizar Cidades via ViaCEP [EM BREVE]")
+    print("  5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)")
+    print("  6. Atualizar Cidades via ViaCEP [EM BREVE]")
+    print()
+    print("  9. ⚠️  EXCLUIR TODOS os dados migrados")
     print()
     print("  0. Sair")
     print()
@@ -180,6 +185,83 @@ def run_update_cities():
     print("Use: python src/update_cities.py\n")
 
 
+def run_migration_pesos():
+    """Executa a migração de pesos dos pets."""
+    print("\n" + "-"*60)
+    print("MIGRAÇÃO DE PESOS DOS PETS")
+    print("-"*60 + "\n")
+    
+    print("Esta migração irá:")
+    print("  • Ler registros de PET_ANIMAL_PESO (banco legado)")
+    print("  • Buscar pet via tabela de controle")
+    print("  • Migrar histórico de pesagens")
+    print("  • Inserir em PET_PESO (banco destino)")
+    print("  • Corrigir automaticamente pesos acima de 999kg\n")
+    
+    print("⚠ IMPORTANTE:")
+    print("  Execute migrações de CLIENTES e PETS antes!")
+    print("  Pesos sem pet migrado serão pulados.\n")
+    
+    # Perguntar sobre dry-run
+    if confirm_action("Executar em modo DRY-RUN primeiro?"):
+        print("\n→ Executando DRY-RUN...\n")
+        migrate_pesos_bulk(batch_size=1000, dry_run=True)
+        
+        if not confirm_action("\nDeseja executar a migração real agora?"):
+            print("\nMigração cancelada.\n")
+            return
+    
+    # Solicitar batch size
+    batch_size = get_batch_size()
+    if batch_size < 1000:
+        print("  ℹ Recomendado batch_size >= 1000 para melhor performance")
+    
+    # Executar migração real
+    print("\n→ Executando migração BULK...\n")
+    total = migrate_pesos_bulk(batch_size=batch_size, dry_run=False)
+    
+    print(f"\n✓ Migração concluída! {total} registros processados.\n")
+
+
+def run_clear_all_data():
+    """Executa exclusão de todos os dados migrados."""
+    print("\n" + "-"*60)
+    print("EXCLUSÃO DE DADOS MIGRADOS")
+    print("-"*60 + "\n")
+    
+    print("⚠️  ATENÇÃO: Esta operação é IRREVERSÍVEL!")
+    print("\nSerão excluídos (nesta ordem):")
+    print("  1. Aplicações de Vacinas")
+    print("  2. Pesos")
+    print("  3. Vacinas")
+    print("  4. Pets")
+    print("  5. Clientes")
+    print("  6. Registros de Controle\n")
+    
+    # Perguntar sobre dry-run
+    if confirm_action("Executar em modo DRY-RUN primeiro (simulação)?"):
+        print("\n→ Executando SIMULAÇÃO...\n")
+        clear_all_data(dry_run=True)
+        
+        if not confirm_action("\n⚠️  Deseja REALMENTE EXCLUIR todos os dados?"):
+            print("\nOperação cancelada.\n")
+            return
+    else:
+        if not confirm_action("\n⚠️  Deseja REALMENTE EXCLUIR todos os dados SEM simular?"):
+            print("\nOperação cancelada.\n")
+            return
+    
+    # Executar exclusão real
+    print("\n→ Executando EXCLUSÃO REAL...\n")
+    stats = clear_all_data(dry_run=False)
+    
+    if stats:
+        print(f"\n✓ Exclusão concluída!")
+        print(f"  Total excluído: {sum(stats.values())} registros\n")
+    else:
+        print(f"\n✗ Erro durante exclusão.\n")
+
+
 def main():
     """Função principal do menu."""
     print_header()
@@ -207,7 +289,13 @@ def main():
                 run_migration_aplicacoes_vacinas()
             
             elif choice == "5":
+                run_migration_pesos()
+            
+            elif choice == "6":
                 run_update_cities()
+            
+            elif choice == "9":
+                run_clear_all_data()
             
             else:
                 print("\n✗ Opção inválida. Por favor, escolha uma opção válida.\n")
