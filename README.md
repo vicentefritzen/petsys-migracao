@@ -164,7 +164,7 @@ Escolha a migração que deseja executar:
   3. Vacinas (PET_VACINA -> VACINA)
   4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)
   5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)
-  6. Atualizar Cidades via ViaCEP [EM BREVE]
+  6. Atualizar Cidades via ViaCEP
 
   9. ⚠️  EXCLUIR TODOS os dados migrados
 
@@ -180,7 +180,7 @@ Opção: _
 3. **Vacinas** (cadastro de vacinas independente)
 4. **Aplicações de Vacinas** (requer pets e vacinas migrados)
 5. **Pesos dos Pets** (requer pets migrados)
-6. **Atualizar Endereços** (opcional, via ViaCEP)
+6. **Atualizar Cidades** (opcional, atualiza cidades baseado em CEP)
 
 ### 🗑️ Exclusão de Dados Migrados
 

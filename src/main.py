@@ -17,6 +17,12 @@ from migrations.aplicacoes_vacinas.migrate_aplicacoes_vacinas_bulk import migrat
 from migrations.pesos.migrate_pesos_bulk import migrate_pesos_bulk
 from clear_migrated_data import clear_all_data
 
+# Importar função de atualização de cidades
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent))
+from update_cities import update_cities
+
 
 def print_header():
     """Imprime o cabeçalho do sistema."""
@@ -35,7 +41,7 @@ def print_menu():
     print("  3. Vacinas (PET_VACINA -> VACINA)")
     print("  4. Aplicações de Vacinas (PET_ANIMAL_VACINA -> PET_VACINA)")
     print("  5. Pesos dos Pets (PET_ANIMAL_PESO -> PET_PESO)")
-    print("  6. Atualizar Cidades via ViaCEP [EM BREVE]")
+    print("  6. Atualizar Cidades via ViaCEP")
     print()
     print("  9. ⚠️  EXCLUIR TODOS os dados migrados")
     print()
@@ -181,8 +187,44 @@ def run_update_cities():
     print("ATUALIZAÇÃO DE CIDADES VIA VIACEP")
     print("-"*60 + "\n")
     
-    print("⚠ FUNCIONALIDADE EM BREVE")
-    print("Use: python src/update_cities.py\n")
+    print("Esta atualização irá:")
+    print("  • Buscar pessoas com CEP cadastrado")
+    print("  • Consultar dados na API ViaCEP")
+    print("  • Atualizar cidade/UF baseado no CEP")
+    print("  • Usar fuzzy matching para encontrar cidade correta\n")
+    
+    print("⚠ IMPORTANTE:")
+    print("  • Respeita delay entre requisições (configurável)")
+    print("  • Processa em lotes para evitar sobrecarga")
+    print("  • Não altera dados se cidade já estiver correta\n")
+    
+    # Perguntar sobre dry-run
+    if confirm_action("Executar em modo DRY-RUN primeiro?"):
+        print("\n→ Executando DRY-RUN...\n")
+        
+        # Criar objeto args para simular argumentos
+        class Args:
+            def __init__(self):
+                self.tenant = None
+                self.dry_run = True
+        
+        update_cities(Args())
+        
+        if not confirm_action("\nDeseja executar a atualização real agora?"):
+            print("\nAtualização cancelada.\n")
+            return
+    
+    # Executar atualização real
+    print("\n→ Executando atualização REAL...\n")
+    
+    class Args:
+        def __init__(self):
+            self.tenant = None
+            self.dry_run = False
+    
+    update_cities(Args())
+    
+    print("\n✓ Atualização concluída!\n")
 
 
 def run_migration_pesos():
