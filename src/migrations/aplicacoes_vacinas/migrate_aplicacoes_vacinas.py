@@ -13,7 +13,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 import uuid
 from datetime import datetime
 from sqlalchemy import text
-from common.db_utils import get_engine_from_env, ensure_controle_table, insert_controle, get_tenant_id
+from common.db_utils import (
+    get_engine_from_env, 
+    ensure_controle_table, 
+    insert_controle, 
+    get_tenant_id,
+    get_default_vet_user_id
+)
 
 
 def buscar_pet_migrado(dest_engine, tenant_id: str, codigo_animal_origem: str):
@@ -82,6 +88,7 @@ def map_origem_to_destino(row, tenant_id: str, dest_engine):
     - Laboratorio -> sDsLaboratorio
     - LocalAplicacao -> sDsLocalAplicacao
     - PreAutorizado -> bFlPreAutorizado
+    - (padrão .env) -> sCdUsuario (veterinário padrão)
     
     Args:
         row: Dicionário com os dados da tabela origem
@@ -137,12 +144,15 @@ def map_origem_to_destino(row, tenant_id: str, dest_engine):
     tDtCriacao = datetime.now()
     tDtAlteracao = datetime.now() if tDtAplicacao else None
     
+    # Usuário veterinário padrão
+    sCdUsuario = get_default_vet_user_id()
+    
     return {
         "sCdPetVacina": sCdPetVacina,
         "sCdTenant": tenant_id,
         "sCdPet": sCdPet,
         "sCdVacina": sCdVacina,
-        "sCdUsuario": None,  # Não temos informação do usuário na origem
+        "sCdUsuario": sCdUsuario,
         "sDsPartida": sDsPartida,
         "tDtPrevista": tDtPrevista,
         "tDtAplicacao": tDtAplicacao,
@@ -179,6 +189,7 @@ def insert_or_update_pet_vacina(dest_engine, registro: dict, dry_run: bool = Fal
     
     update_sql = text("""
         UPDATE PET_VACINA SET
+            sCdUsuario = :sCdUsuario,
             sDsPartida = :sDsPartida,
             tDtAplicacao = :tDtAplicacao,
             sDsLaboratorio = :sDsLaboratorio,

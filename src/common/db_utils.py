@@ -9,6 +9,7 @@ load_dotenv(dotenv_path=env_path)
 
 DEFAULT_TENANT = os.getenv("DEFAULT_TENANT", "dfedd5f4-f30c-45ea-bc1e-695081d8415c")
 DEFAULT_CITY_ID = os.getenv("DEFAULT_CITY_ID", "b6099443-d5c4-5e2c-8b53-4bd1c02b9793")
+DEFAULT_VET_USER_ID = os.getenv("DEFAULT_VET_USER_ID", "f7cc3d41-12e9-4247-a828-69cfeeb52a74")
 
 
 def get_engine_from_env(env_var_name: str):
@@ -87,3 +88,8 @@ def get_tenant_id():
 def get_default_city_id():
     """Retorna o ID da cidade padrão do .env."""
     return DEFAULT_CITY_ID
+
+
+def get_default_vet_user_id():
+    """Retorna o ID do usuário veterinário padrão do .env."""
+    return DEFAULT_VET_USER_ID

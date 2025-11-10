@@ -476,7 +476,7 @@ def migrate_prontuarios_bulk(batch_size: int = 500, dry_run: bool = False):
                     'sCdPet': sCdPet,
                     'tDtRegistro': entry_data,
                     'sCdUsuarioRegistro': sCdUsuario,
-                    'sDsObservacao': None,  # Vazio para prontuários normais
+                    'sDsObservacao': '',  # Vazio para prontuários normais
                     'sDsProntuario': entry_conteudo,
                     'tDtAlteracao': None,
                     'sCdUsuarioAlteracao': None
