@@ -8,8 +8,8 @@ Exclui dados migrados na ordem correta para evitar problemas de foreign key:
 4. Prontuários (PRONTUARIO)
 5. Vacinas (VACINA)
 6. Pets (PET)
-7. Clientes (PESSOA)
-8. Registros de controle (CONTROLE_MIGRACAO_LEGADO)
+7. Clientes (PESSOA_TIPO + PESSOA)
+8. Controle (CONTROLE_MIGRACAO_LEGADO)
 """
 import sys
 from pathlib import Path
@@ -19,243 +19,344 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sqlalchemy import text
 from common.db_utils import get_engine_from_env, get_tenant_id
+import time
 
 
-def get_counts(dest_engine, tenant_id: str):
+def get_fresh_connection():
+    """Obtém um novo engine para conexão com o banco de dados."""
+    return get_engine_from_env("DEST_DB_URL")
+
+
+def execute_delete_with_retry(table_name: str, tenant_id: str, step_number: str, dry_run: bool = False, retry_count: int = 3, batch_size: int = 1000):
+    """
+    Executa DELETE em lotes com retry automático em caso de timeout.
+    
+    Args:
+        table_name: Nome da tabela
+        tenant_id: ID do tenant
+        step_number: Número do passo (ex: "1️⃣ ")
+        dry_run: Se True, apenas simula
+        retry_count: Número de tentativas por lote
+        batch_size: Quantidade de registros por lote
+    
+    Returns:
+        int: Número de registros excluídos
+    """
+    table_display_names = {
+        'PET_VACINA': 'APLICAÇÕES DE VACINAS (PET_VACINA)',
+        'PET_PESO': 'PESOS (PET_PESO)',
+        'RECEITA_MEDICA': 'RECEITAS MÉDICAS (RECEITA_MEDICA)',
+        'PRONTUARIO': 'PRONTUÁRIOS (PRONTUARIO)',
+        'VACINA': 'VACINAS (VACINA)',
+        'PET': 'PETS (PET)',
+        'PESSOA': 'CLIENTES (PESSOA_TIPO + PESSOA)',
+        'CONTROLE_MIGRACAO_LEGADO': 'CONTROLE DE MIGRAÇÃO (CONTROLE_MIGRACAO_LEGADO)'
+    }
+    
+    print(f"\n{step_number} Excluindo {table_display_names.get(table_name, table_name)}...", end=" ", flush=True)
+    
+    if dry_run:
+        print("[DRY-RUN]")
+        return 0
+    
+    total_deleted = 0
+    
+    # Loop até não ter mais registros para excluir
+    while True:
+        deleted_in_batch = 0
+        
+        for attempt in range(retry_count):
+            try:
+                engine = get_fresh_connection()
+                
+                # Excluir em lotes (TOP N)
+                delete_sql = text(f"""
+                    DELETE TOP ({batch_size}) FROM {table_name} 
+                    WHERE sCdTenant = '{tenant_id}'
+                """)
+                
+                with engine.begin() as conn:
+                    result = conn.execute(delete_sql)
+                    deleted_in_batch = result.rowcount
+                
+                total_deleted += deleted_in_batch
+                
+                # Se deletou registros, mostrar progresso
+                if deleted_in_batch > 0:
+                    print(f"{total_deleted:,}...", end=" ", flush=True)
+                
+                break  # Sucesso, sair do retry
+                
+            except Exception as e:
+                if attempt < retry_count - 1:
+                    print(f"\n⚠ Tentativa {attempt + 1} falhou. Tentando novamente em 2 segundos...")
+                    time.sleep(2)
+                else:
+                    print(f"\n✗ Erro após {retry_count} tentativas: {e}")
+                    raise
+        
+        # Se não deletou nada nesse lote, terminou
+        if deleted_in_batch == 0:
+            break
+    
+    print(f"✓ Total: {total_deleted:,} registros excluídos")
+    return total_deleted
+
+
+def get_counts(dest_engine, tenant_id: str, retry_count: int = 3):
     """
     Retorna a quantidade de registros de cada tabela.
+    
+    Args:
+        dest_engine: Engine do banco de dados
+        tenant_id: ID do tenant
+        retry_count: Número de tentativas em caso de timeout
     
     Returns:
         dict: Contagens de cada tabela
     """
     counts = {}
     
-    with dest_engine.connect() as conn:
-        # Aplicações de Vacinas
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM PET_VACINA 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['aplicacoes_vacinas'] = result.fetchone()[0]
-        
-        # Pesos
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM PET_PESO 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['pesos'] = result.fetchone()[0]
-        
-        # Receitas Médicas
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM RECEITA_MEDICA 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['receitas'] = result.fetchone()[0]
-        
-        # Prontuários
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM PRONTUARIO 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['prontuarios'] = result.fetchone()[0]
-        
-        # Vacinas
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM VACINA 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['vacinas'] = result.fetchone()[0]
-        
-        # Pets
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM PET 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['pets'] = result.fetchone()[0]
-        
-        # Clientes
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM PESSOA 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['clientes'] = result.fetchone()[0]
-        
-        # Controle de migração
-        result = conn.execute(text(f"""
-            SELECT COUNT(*) FROM CONTROLE_MIGRACAO_LEGADO 
-            WHERE sCdTenant = '{tenant_id}'
-        """))
-        counts['controle'] = result.fetchone()[0]
+    for attempt in range(retry_count):
+        try:
+            # Criar nova conexão para evitar timeout
+            engine = get_fresh_connection()
+            
+            with engine.connect() as conn:
+                # Aplicações de Vacinas
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM PET_VACINA 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['aplicacoes_vacinas'] = result.fetchone()[0]
+                
+                # Pesos
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM PET_PESO 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['pesos'] = result.fetchone()[0]
+                
+                # Receitas Médicas
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM RECEITA_MEDICA 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['receitas'] = result.fetchone()[0]
+                
+                # Prontuários
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM PRONTUARIO 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['prontuarios'] = result.fetchone()[0]
+                
+                # Vacinas
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM VACINA 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['vacinas'] = result.fetchone()[0]
+                
+                # Pets
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM PET 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['pets'] = result.fetchone()[0]
+                
+                # Clientes (PESSOA + PESSOA_TIPO onde nCdTipo=2)
+                result = conn.execute(text(f"""
+                    SELECT COUNT(DISTINCT p.sCdPessoa)
+                    FROM PESSOA p
+                    INNER JOIN PESSOA_TIPO pt ON pt.sCdPessoa = p.sCdPessoa
+                    WHERE p.sCdTenant = '{tenant_id}' AND pt.nCdTipo = 2
+                """))
+                counts['clientes'] = result.fetchone()[0]
+                
+                # Controle de migração
+                result = conn.execute(text(f"""
+                    SELECT COUNT(*) FROM CONTROLE_MIGRACAO_LEGADO 
+                    WHERE sCdTenant = '{tenant_id}'
+                """))
+                counts['controle'] = result.fetchone()[0]
+            
+            # Se chegou aqui, sucesso!
+            return counts
+            
+        except Exception as e:
+            if attempt < retry_count - 1:
+                print(f"\n⚠ Tentativa {attempt + 1} falhou:")
+                print(f"   Erro: {e}")
+                print(f"   Tentando novamente em 2 segundos...")
+                time.sleep(2)
+            else:
+                print(f"\n✗ Erro ao obter contagens após {retry_count} tentativas:")
+                print(f"   {e}")
+                import traceback
+                traceback.print_exc()
+                raise
     
     return counts
 
 
 def clear_aplicacoes_vacinas(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui aplicações de vacinas."""
-    print("\n1️⃣  Excluindo APLICAÇÕES DE VACINAS (PET_VACINA)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM PET_VACINA 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('PET_VACINA', tenant_id, '1️⃣ ', dry_run)
 
 
 def clear_pesos(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui pesos dos pets."""
-    print("2️⃣  Excluindo PESOS (PET_PESO)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM PET_PESO 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('PET_PESO', tenant_id, '2️⃣ ', dry_run)
 
 
 def clear_receitas(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui receitas médicas."""
-    print("3️⃣  Excluindo RECEITAS MÉDICAS (RECEITA_MEDICA)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM RECEITA_MEDICA 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('RECEITA_MEDICA', tenant_id, '3️⃣ ', dry_run)
 
 
 def clear_prontuarios(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui prontuários."""
-    print("4️⃣  Excluindo PRONTUÁRIOS (PRONTUARIO)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM PRONTUARIO 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('PRONTUARIO', tenant_id, '4️⃣ ', dry_run)
 
 
 def clear_vacinas(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui vacinas."""
-    print("5️⃣  Excluindo VACINAS (VACINA)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM VACINA 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('VACINA', tenant_id, '5️⃣ ', dry_run)
 
 
 def clear_pets(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui pets."""
-    print("6️⃣  Excluindo PETS (PET)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM PET 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('PET', tenant_id, '6️⃣ ', dry_run)
 
 
 def clear_clientes(dest_engine, tenant_id: str, dry_run: bool = False):
-    """Exclui clientes."""
-    print("7️⃣  Excluindo CLIENTES (PESSOA)...", end=" ", flush=True)
+    """Exclui clientes (PESSOA_TIPO e PESSOA)."""
+    print(f"\n7️⃣  Excluindo CLIENTES (PESSOA_TIPO + PESSOA)... ", end="", flush=True)
     
     if dry_run:
-        print("[DRY-RUN]")
-        return 0
+        engine = get_fresh_connection()
+        with engine.connect() as conn:
+            # Contar PESSOA_TIPO de clientes (nCdTipo=2)
+            result = conn.execute(text("""
+                SELECT COUNT(*) 
+                FROM PESSOA_TIPO pt
+                INNER JOIN PESSOA p ON pt.sCdPessoa = p.sCdPessoa
+                WHERE p.sCdTenant = :tenant AND pt.nCdTipo = 2
+            """), {"tenant": tenant_id})
+            count_tipo = result.fetchone()[0]
+            
+            # Contar PESSOA de clientes
+            result = conn.execute(text("""
+                SELECT COUNT(*) 
+                FROM PESSOA p
+                WHERE p.sCdTenant = :tenant 
+                AND EXISTS (
+                    SELECT 1 FROM PESSOA_TIPO pt 
+                    WHERE pt.sCdPessoa = p.sCdPessoa AND pt.nCdTipo = 2
+                )
+            """), {"tenant": tenant_id})
+            count_pessoa = result.fetchone()[0]
+            
+            print(f"[dry-run] PESSOA_TIPO: {count_tipo}, PESSOA: {count_pessoa}")
+            return count_tipo + count_pessoa
     
-    delete_sql = text(f"""
-        DELETE FROM PESSOA 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
+    total_deleted = 0
     
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
+    # 1. Deletar PESSOA_TIPO (nCdTipo=2 - CLIENTE) em lotes
+    print("\n   → PESSOA_TIPO (clientes)... ", end="", flush=True)
+    retry_count = 0
+    max_retries = 3
+    batch_size = 1000
     
-    print(f"✓ {count} registros excluídos")
-    return count
+    while retry_count < max_retries:
+        try:
+            engine = get_fresh_connection()
+            with engine.connect() as conn:
+                deleted_in_batch = 1
+                while deleted_in_batch > 0:
+                    result = conn.execute(text(f"""
+                        DELETE TOP ({batch_size}) FROM PESSOA_TIPO
+                        WHERE sCdPessoa IN (
+                            SELECT sCdPessoa FROM PESSOA WHERE sCdTenant = :tenant
+                        ) AND nCdTipo = 2
+                    """), {"tenant": tenant_id})
+                    deleted_in_batch = result.rowcount
+                    conn.commit()
+                    
+                    if deleted_in_batch > 0:
+                        total_deleted += deleted_in_batch
+                        print(f"{total_deleted:,}...", end=" ", flush=True)
+                
+                print(f"✓ Total: {total_deleted:,}")
+                break
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                print(f"\n⚠ Tentativa {retry_count} falhou:")
+                print(f"   Erro: {e}")
+                print(f"   Tentando novamente em 2 segundos...")
+                time.sleep(2)
+            else:
+                print(f"\n✗ Erro após {max_retries} tentativas:")
+                print(f"   {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+    
+    # 2. Deletar PESSOA em lotes (apenas pessoas que não têm mais PESSOA_TIPO)
+    print("   → PESSOA (sem tipos associados)... ", end="", flush=True)
+    pessoa_deleted = 0
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            engine = get_fresh_connection()
+            with engine.connect() as conn:
+                deleted_in_batch = 1
+                while deleted_in_batch > 0:
+                    result = conn.execute(text(f"""
+                        DELETE TOP ({batch_size}) FROM PESSOA
+                        WHERE sCdTenant = :tenant
+                        AND NOT EXISTS (
+                            SELECT 1 FROM PESSOA_TIPO pt 
+                            WHERE pt.sCdPessoa = PESSOA.sCdPessoa
+                        )
+                    """), {"tenant": tenant_id})
+                    deleted_in_batch = result.rowcount
+                    conn.commit()
+                    
+                    if deleted_in_batch > 0:
+                        pessoa_deleted += deleted_in_batch
+                        print(f"{pessoa_deleted:,}...", end=" ", flush=True)
+                
+                if pessoa_deleted > 0:
+                    print(f"✓ Total: {pessoa_deleted:,}")
+                else:
+                    print("✓ Nenhum registro (pessoas ainda têm outros tipos)")
+                
+                total_deleted += pessoa_deleted
+                break
+        except Exception as e:
+            retry_count += 1
+            if retry_count < max_retries:
+                print(f"\n⚠ Tentativa {retry_count} falhou:")
+                print(f"   Erro: {e}")
+                print(f"   Tentando novamente em 2 segundos...")
+                time.sleep(2)
+            else:
+                print(f"\n✗ Erro após {max_retries} tentativas:")
+                print(f"   {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+    
+    return total_deleted
 
 
 def clear_controle(dest_engine, tenant_id: str, dry_run: bool = False):
     """Exclui registros de controle de migração."""
-    print("8️⃣  Excluindo CONTROLE DE MIGRAÇÃO (CONTROLE_MIGRACAO_LEGADO)...", end=" ", flush=True)
-    
-    if dry_run:
-        print("[DRY-RUN]")
-        return 0
-    
-    delete_sql = text(f"""
-        DELETE FROM CONTROLE_MIGRACAO_LEGADO 
-        WHERE sCdTenant = '{tenant_id}'
-    """)
-    
-    with dest_engine.begin() as conn:
-        result = conn.execute(delete_sql)
-        count = result.rowcount
-    
-    print(f"✓ {count} registros excluídos")
-    return count
+    return execute_delete_with_retry('CONTROLE_MIGRACAO_LEGADO', tenant_id, '8️⃣ ', dry_run)
 
 
 def clear_all_data(dry_run: bool = False):

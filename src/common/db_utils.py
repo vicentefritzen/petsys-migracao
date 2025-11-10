@@ -22,7 +22,7 @@ def get_engine_from_env(env_var_name: str):
         return create_engine(
             url,
             connect_args={
-                "timeout": 30,
+                "timeout": 300,  # 5 minutos timeout para operações pesadas
                 "login_timeout": 30,
                 "tds_version": "7.4"
             }
