@@ -434,7 +434,7 @@ def migrate_prontuarios_bulk(batch_size: int = 500, dry_run: bool = False):
                     'sCdUsuarioRegistro': sCdUsuario,
                     'tDtAlteracao': None,
                     'sCdUsuarioAlteracao': None,
-                    'sDsObservacao': None,
+                    'sDsObservacao': '',
                     'sDsReceitaMedica': entry_conteudo,
                     'bFlReceitaControlada': 0
                 })
